@@ -1,0 +1,7 @@
+# This is a comment
+name: "hello # not a comment"  # inline comment
+value: 'world # not a comment'
+list:
+  - item1  # comment
+  - item2
+# End comment
