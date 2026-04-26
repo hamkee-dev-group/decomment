@@ -1,7 +1,0 @@
-
-name: "hello # not a comment"  
-value: 'world # not a comment'
-list:
-  - item1  
-  - item2
-
