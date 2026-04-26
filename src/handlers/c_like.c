@@ -53,6 +53,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
     dc_result_t r;
     int nest_depth = 0;
     size_t block_newlines = 0;
+    dc_boundary_t boundary;
 
      
     char raw_cpp_delim[32];
@@ -71,6 +72,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
 
     r = dc_buf_ensure(out, len);
     if (r != DC_OK) return r;
+    dc_boundary_init(&boundary);
 
     for (size_t i = 0; i < len; i++) {
         char c = in[i];
@@ -81,22 +83,23 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             if (c == '/' && (flags & (CLIKE_LINE_COMMENT | CLIKE_BLOCK_COMMENT))) {
                 state = ST_SLASH;
             } else if (c == '#' && (flags & CLIKE_HASH_COMMENT)) {
+                dc_boundary_start_comment(out, &boundary);
                 state = ST_HASH_COMMENT;
             } else if (c == '"') {
                 if ((flags & CLIKE_RAW_STRING_CPP) && out->len > 0 && out->data[out->len - 1] == 'R') {
                      
                     raw_cpp_delim_len = 0;
                     state = ST_RAW_CPP_PREFIX;
-                    dc_buf_push(out, c);
+                    dc_push_code(out, &boundary, c);
                 } else {
                     state = ST_STRING_DQ;
-                    dc_buf_push(out, c);
+                    dc_push_code(out, &boundary, c);
                 }
             } else if (c == 'r' && (flags & CLIKE_RAW_STRING_RUST) && i + 1 < len) {
                 if (in[i + 1] == '"') {
                     rust_hash_count = 0;
-                    dc_buf_push(out, 'r');
-                    dc_buf_push(out, '"');
+                    dc_push_code(out, &boundary, 'r');
+                    dc_push_code(out, &boundary, '"');
                     i++;
                     state = ST_RAW_RUST;
                 } else if (in[i + 1] == '#') {
@@ -105,45 +108,47 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
                     while (j < len && in[j] == '#') { hc++; j++; }
                     if (j < len && in[j] == '"') {
                         rust_hash_count = hc;
-                        dc_buf_push(out, 'r');
-                        for (int h = 0; h < hc; h++) dc_buf_push(out, '#');
-                        dc_buf_push(out, '"');
+                        dc_push_code(out, &boundary, 'r');
+                        for (int h = 0; h < hc; h++) dc_push_code(out, &boundary, '#');
+                        dc_push_code(out, &boundary, '"');
                         i = j;
                         state = ST_RAW_RUST;
                     } else {
-                        dc_buf_push(out, c);
+                        dc_push_code(out, &boundary, c);
                     }
                 } else {
-                    dc_buf_push(out, c);
+                    dc_push_code(out, &boundary, c);
                 }
             } else if (c == '\'' && (flags & (CLIKE_CHAR_LITERAL | CLIKE_SINGLE_STRING))) {
                 state = ST_STRING_SQ;
-                dc_buf_push(out, c);
+                dc_push_code(out, &boundary, c);
             } else if (c == '`' && (flags & CLIKE_RAW_STRING_GO)) {
                 state = ST_RAW_GO;
-                dc_buf_push(out, c);
+                dc_push_code(out, &boundary, c);
             } else if (c == '`' && (flags & CLIKE_TEMPLATE_LIT)) {
                 state = ST_TEMPLATE_LIT;
-                dc_buf_push(out, c);
+                dc_push_code(out, &boundary, c);
             } else if (c == '{' && brace_top >= 0) {
                 brace_depth[brace_top]++;
-                dc_buf_push(out, c);
+                dc_push_code(out, &boundary, c);
             } else if (c == '}' && brace_top >= 0 && brace_depth[brace_top] <= 0) {
                 brace_top--;
                 state = ST_TEMPLATE_LIT;
-                dc_buf_push(out, c);
+                dc_push_code(out, &boundary, c);
             } else if (c == '}' && brace_top >= 0) {
                 brace_depth[brace_top]--;
-                dc_buf_push(out, c);
+                dc_push_code(out, &boundary, c);
             } else {
-                dc_buf_push(out, c);
+                dc_push_code(out, &boundary, c);
             }
             break;
 
         case ST_SLASH:
             if (c == '/' && (flags & CLIKE_LINE_COMMENT)) {
+                dc_boundary_start_comment(out, &boundary);
                 state = ST_LINE_COMMENT;
             } else if (c == '*' && (flags & CLIKE_BLOCK_COMMENT)) {
+                dc_boundary_start_comment(out, &boundary);
                 state = ST_BLOCK_COMMENT;
                 nest_depth = 1;
                 block_newlines = 0;
@@ -152,8 +157,8 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
                 if (flags & CLIKE_REGEX_JS) {
                     char prev = last_significant(in, i - 1);
                     if (is_regex_prefix_char(prev)) {
-                        dc_buf_push(out, '/');
-                        dc_buf_push(out, c);
+                        dc_push_code(out, &boundary, '/');
+                        dc_push_code(out, &boundary, c);
                         if (c == '\\') state = ST_REGEX_ESC;
                         else if (c == '[') state = ST_REGEX_CLASS;
                         else if (c == '\n') {
@@ -162,7 +167,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
                         break;
                     }
                 }
-                dc_buf_push(out, '/');
+                dc_push_code(out, &boundary, '/');
                 state = ST_CODE;
                 i--;
             }
@@ -170,7 +175,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
 
         case ST_LINE_COMMENT:
             if (c == '\n') {
-                dc_buf_push(out, '\n');
+                dc_push_comment_newline(out, &boundary);
                 state = ST_CODE;
             }
             break;
@@ -195,10 +200,13 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
                 } else {
                     if (block_newlines > 0) {
                         for (size_t n = 0; n < block_newlines; n++)
-                            dc_buf_push(out, '\n');
+                            dc_push_comment_newline(out, &boundary);
                     } else {
-                        dc_buf_push(out, ' ');
+                        dc_push_comment_space(out, &boundary);
                     }
+                    if (boundary.suppress_comment_replacement && i + 1 < len && in[i + 1] == '\n')
+                        i++;
+                    dc_boundary_skip_leading_ws(&boundary);
                     state = ST_CODE;
                 }
             } else if (c == '*') {
@@ -212,7 +220,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_STRING_DQ:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '\\') state = ST_STRING_DQ_ESC;
             else if (c == '"') state = ST_CODE;
             else if (c == '\n' && (flags & CLIKE_CHAR_LITERAL)) {
@@ -223,12 +231,12 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_STRING_DQ_ESC:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             state = ST_STRING_DQ;
             break;
 
         case ST_STRING_SQ:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '\\') state = ST_STRING_SQ_ESC;
             else if (c == '\'') state = ST_CODE;
             else if (c == '\n' && (flags & CLIKE_CHAR_LITERAL)) {
@@ -237,12 +245,12 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_STRING_SQ_ESC:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             state = ST_STRING_SQ;
             break;
 
         case ST_RAW_CPP_PREFIX:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '(') {
                 raw_cpp_close[0] = ')';
                 memcpy(raw_cpp_close + 1, raw_cpp_delim, raw_cpp_delim_len);
@@ -256,7 +264,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_RAW_CPP:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if ((size_t)(unsigned char)c == (size_t)(unsigned char)raw_cpp_close[raw_cpp_close_match]) {
                 raw_cpp_close_match++;
                 if (raw_cpp_close_match == raw_cpp_close_len) {
@@ -271,7 +279,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_RAW_RUST:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '"') {
                 if (rust_hash_count == 0) {
                     state = ST_CODE;
@@ -283,7 +291,7 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_RAW_RUST_CLOSING:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '#') {
                 rust_closing_hashes++;
                 if (rust_closing_hashes == rust_hash_count) {
@@ -297,18 +305,18 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_RAW_GO:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '`') state = ST_CODE;
             break;
 
         case ST_TEMPLATE_LIT:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '\\') {
                 state = ST_TEMPLATE_ESC;
             } else if (c == '`') {
                 state = ST_CODE;
             } else if (c == '$' && i + 1 < len && in[i + 1] == '{') {
-                dc_buf_push(out, '{');
+                dc_push_code(out, &boundary, '{');
                 i++;
                 if (brace_top < 62) {
                     brace_top++;
@@ -319,19 +327,19 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_TEMPLATE_ESC:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             state = ST_TEMPLATE_LIT;
             break;
 
         case ST_REGEX:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '\\') state = ST_REGEX_ESC;
             else if (c == '[') state = ST_REGEX_CLASS;
             else if (c == '/') {
                 while (i + 1 < len && ((in[i + 1] >= 'a' && in[i + 1] <= 'z') ||
                                         (in[i + 1] >= 'A' && in[i + 1] <= 'Z'))) {
                     i++;
-                    dc_buf_push(out, in[i]);
+                    dc_push_code(out, &boundary, in[i]);
                 }
                 state = ST_CODE;
             } else if (c == '\n') {
@@ -340,24 +348,24 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
             break;
 
         case ST_REGEX_ESC:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             state = ST_REGEX;
             break;
 
         case ST_REGEX_CLASS:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             if (c == '\\') state = ST_REGEX_CLASS_ESC;
             else if (c == ']') state = ST_REGEX;
             break;
 
         case ST_REGEX_CLASS_ESC:
-            dc_buf_push(out, c);
+            dc_push_code(out, &boundary, c);
             state = ST_REGEX_CLASS;
             break;
 
         case ST_HASH_COMMENT:
             if (c == '\n') {
-                dc_buf_push(out, '\n');
+                dc_push_comment_newline(out, &boundary);
                 state = ST_CODE;
             }
             break;
@@ -366,11 +374,12 @@ dc_result_t dc_strip_clike(const char *in, size_t len, dc_buf_t *out, uint32_t f
 
      
     if (state == ST_SLASH) {
-        dc_buf_push(out, '/');
+        dc_push_code(out, &boundary, '/');
     } else if (state == ST_BLOCK_COMMENT || state == ST_BLOCK_STAR) {
         for (size_t n = 0; n < block_newlines; n++)
-            dc_buf_push(out, '\n');
+            dc_push_comment_newline(out, &boundary);
     }
 
+    dc_boundary_finish(out, &boundary);
     return DC_OK;
 }
