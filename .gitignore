@@ -1,0 +1,30 @@
+# Build artifacts
+decomment
+decomment.exe
+*.o
+*.obj
+*.d
+
+# Test binaries
+tests/
+# CMake
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Backup files from decomment itself
+*.bak
+*.orig
+
+# Binary test fixture
+tests/fixtures/binary_file.bin
