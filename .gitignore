@@ -6,7 +6,9 @@ decomment.exe
 *.d
 
 # Test binaries
-tests/
+!tests/
+tests/*
+!tests/regression.c
 # CMake
 build/
 cmake-build-*/

@@ -13,12 +13,12 @@ SRCS = src/main.c src/cli.c src/buf.c src/log.c src/platform.c src/fs.c src/lang
 
 OBJS = $(SRCS:.c=.o)
 
-TEST_SRCS = tests/test_main.c src/buf.c \
+TEST_SRCS = tests/regression.c src/buf.c src/lang.c \
             src/handlers/c_like.c src/handlers/python.c src/handlers/shell.c \
             src/handlers/hash.c src/handlers/lua.c
 
 TARGET = decomment
-TEST_TARGET = tests/test_runner
+TEST_TARGET = tests/regression_runner
 
 .PHONY: all clean test install uninstall lint sanitize
 
@@ -33,7 +33,7 @@ $(TARGET): $(OBJS)
 test: $(TEST_TARGET)
 	./$(TEST_TARGET)
 
-$(TEST_TARGET): $(TEST_SRCS)
+$(TEST_TARGET): $(TEST_SRCS) src/handlers/handlers.h include/lang.h include/buf.h include/decomment.h
 	$(CC) $(CFLAGS) -DTESTING -o $@ $(TEST_SRCS)
 
 clean:

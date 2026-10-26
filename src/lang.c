@@ -34,8 +34,6 @@ static const char *fn_ruby[] = {"Rakefile", "Gemfile", NULL};
 static const char *fn_shell[] = {".bashrc", ".bash_profile", ".zshrc", ".profile", NULL};
 static const char *fn_none[] = {NULL};
 
-#define HASH_SQ_NO_ESCAPE (1u << 16)
-
 static const dc_lang_t languages[] = {
     {"c", "C", ext_c, fn_none, dc_strip_clike, CLIKE_C, NULL},
     {"cpp", "C++", ext_cpp, fn_none, dc_strip_clike, CLIKE_CPP, NULL},
@@ -64,7 +62,7 @@ static const dc_lang_t languages[] = {
     {"perl", "Perl", ext_perl, fn_none, dc_strip_hash, 0,
      "Limited: does not handle heredocs, regex, or complex quoting"},
     {"r", "R", ext_r, fn_none, dc_strip_hash, 0, NULL},
-    {"yaml", "YAML", ext_yaml, fn_none, dc_strip_hash, HASH_SQ_NO_ESCAPE, NULL},
+    {"yaml", "YAML", ext_yaml, fn_none, dc_strip_hash, HASH_SQ_NO_ESCAPE | HASH_YAML, NULL},
     {"toml", "TOML", ext_toml, fn_none, dc_strip_hash, HASH_SQ_NO_ESCAPE, NULL},
     {"lua", "Lua", ext_lua, fn_none, dc_strip_lua, 0, NULL},
     {NULL, NULL, NULL, NULL, NULL, 0, NULL}  
